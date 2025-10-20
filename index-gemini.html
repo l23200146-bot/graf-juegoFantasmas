@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cazafantasmas 2D: La Mansión Embrujada</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.52/Tone.js"></script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E👻%3C/text%3E%3C/svg%3E">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;700&display=swap');
+        
+        :root {
+            --primary-color: #6d28d9; 
+            --secondary-color: #f59e0b; 
+            --background-dark: #1f2937; 
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-dark);
+            /* --- PUNTO DE PERSONALIZACIÓN 1: IMAGEN DE FONDO DEL ESCENARIO --- */
+            /* En un proyecto real, usa: url('/assets/mansion_abandonada.jpg') */
+            background-image: url('https://placehold.co/1200x800/1e293b/ffffff?text=Mansión+Abandonada+31+Octubre');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        /* --- PUNTO DE PERSONALIZACIÓN 2: CURSOR PERSONALIZADO (PISTOLA) --- */
+        #gameCanvas {
+            /* Si usas una imagen de 32x32px llamada pistola.png en /assets:
+               cursor: url('/assets/pistola.png') 16 16, auto;
+               
+               Actualmente usa un SVG Data URI para funcionar sin archivos externos:
+            */
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23ff0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg>') 16 16, crosshair;
+            border: 4px solid var(--secondary-color);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.7);
+            display: block;
+        }
+        
+        .title-font {
+            font-family: 'Creepster', cursive;
+            color: var(--secondary-color);
+        }
+        
+        /* Estilos de botones con efecto animado */
+        .btn-game {
+            transition: all 0.2s;
+            box-shadow: 0 4px var(--primary-color);
+        }
+        .btn-game:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px var(--primary-color);
+        }
+        .btn-game:active {
+            transform: translateY(2px);
+            box-shadow: 0 0 var(--primary-color);
+        }
+    </style>
+
+    <!-- Firebase Imports (Se mantiene la lógica para persistencia de score) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, limit, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ghostbuster-game-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.auth = getAuth(app);
+        window.isFirebaseReady = false;
+        window.userId = 'anon-' + crypto.randomUUID(); 
+        setLogLevel('Debug');
+
+        async function initializeFirebase() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(window.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                await signInAnonymously(window.auth);
+            }
+        }
+        
+        onAuthStateChanged(window.auth, (user) => {
+            if (user) {
+                window.userId = user.uid;
+                window.isFirebaseReady = true;
+                document.getElementById('user-id').textContent = `ID de Usuario: ${window.userId}`;
+                setupScoreListener();
+            } else {
+                console.log("User signed out or failed to sign in.");
+            }
+        });
+        
+        initializeFirebase();
+
+        function getHighScoresRef() {
+            return collection(window.db, `artifacts/${appId}/public/data/highScores`);
+        }
+        
+        window.saveHighScore = async (score) => {
+            if (!window.isFirebaseReady || score === 0) return;
+            try {
+                const userDocRef = doc(getHighScoresRef(), window.userId);
+                await setDoc(userDocRef, {
+                    userId: window.userId,
+                    score: score,
+                    timestamp: Date.now()
+                }, { merge: true });
+                console.log(`Puntuación ${score} guardada para ${window.userId}`);
+            } catch (e) {
+                console.error("Error al guardar la puntuación:", e);
+            }
+        };
+
+        function setupScoreListener() {
+            if (!window.isFirebaseReady) return;
+
+            const q = query(getHighScoresRef(), orderBy("score", "desc"), limit(5));
+            
+            onSnapshot(q, (snapshot) => {
+                const highScores = [];
+                snapshot.forEach((doc) => {
+                    highScores.push(doc.data());
+                });
+                displayHighScores(highScores);
+            }, (error) => {
+                console.error("Error al escuchar High Scores:", error);
+            });
+        }
+        
+        function displayHighScores(scores) {
+            const listElement = document.getElementById('high-scores-list');
+            if (!listElement) return;
+
+            listElement.innerHTML = '';
+            scores.forEach((scoreData, index) => {
+                const listItem = document.createElement('li');
+                listItem.className = 'py-1 text-sm flex justify-between';
+                const scoreDisplay = Math.max(0, scoreData.score || 0); 
+                
+                listItem.innerHTML = `
+                    <span class="font-bold text-lg text-yellow-300">#${index + 1}</span>
+                    <span class="truncate ml-2 text-gray-300">${scoreData.userId.substring(0, 8)}...</span>
+                    <span class="font-mono text-lg text-yellow-500">${scoreDisplay}</span>
+                `;
+                listElement.appendChild(listItem);
+            });
+        }
+    </script>
+</head>
+<body class="p-4 md:p-8 flex flex-col min-h-screen text-gray-100">
+
+    <!-- HEADER -->
+    <header class="bg-gray-800/80 p-4 rounded-xl shadow-2xl mb-6 border-b-4 border-secondary-color">
+        <div class="container mx-auto flex flex-col md:flex-row justify-between items-center">
+            <h1 class="title-font text-4xl md:text-5xl font-bold tracking-wider flex items-center mb-4 md:mb-0">
+                <span class="mr-3 text-secondary-color text-6xl">👻</span>
+                Cazafantasmas 2D
+            </h1>
+            
+            <div id="score-counter" class="bg-primary-color p-3 rounded-xl shadow-lg border-2 border-secondary-color min-w-[200px] text-center">
+                <p class="uppercase text-sm font-semibold text-gray-200">Puntuación:</p>
+                <p id="current-score" class="text-4xl font-extrabold text-secondary-color font-mono">0</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN -->
+    <main class="flex-grow container mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        <!-- Columna de High Scores -->
+        <div class="lg:col-span-1 bg-gray-800/80 p-4 rounded-xl shadow-xl h-fit">
+            <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-gray-600 title-font text-secondary-color">Puntuaciones Altas</h2>
+            <ul id="high-scores-list" class="space-y-2">
+                <li class="text-gray-400">Cargando puntuaciones...</li>
+            </ul>
+            <p id="user-id" class="text-xs text-gray-500 mt-4 break-words">ID de Usuario: N/A</p>
+        </div>
+
+        <!-- Canvas del Juego -->
+        <div class="lg:col-span-2 flex justify-center items-center">
+            <div id="game-container" class="w-full h-full aspect-video max-h-[80vh] relative rounded-xl overflow-hidden shadow-2xl">
+                <canvas id="gameCanvas" class="w-full h-full"></canvas>
+                
+                <!-- Overlay de Inicio -->
+                <div id="start-overlay" class="absolute inset-0 bg-gray-900/95 flex flex-col items-center justify-center p-8 transition-opacity duration-500 z-50">
+                    <h2 class="title-font text-6xl text-secondary-color mb-6 text-center">¡Atrapa a los Fantasmas!</h2>
+                    <p class="text-gray-300 text-lg mb-8 text-center">La mansión está invadida. Usa tu puntero láser para atrapar tantos fantasmas como puedas antes de que se esfumen.</p>
+                    <button id="start-button" class="btn-game bg-secondary-color hover:bg-yellow-400 text-gray-900 font-bold py-4 px-8 text-xl rounded-full">
+                        Comenzar Cacería
+                    </button>
+                    <p class="text-xs text-gray-400 mt-4">(Se requiere un click para iniciar el sonido)</p>
+                </div>
+                
+                <!-- Overlay de Mensaje (Game Over) -->
+                <div id="message-box" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-900 p-6 rounded-lg shadow-2xl border-2 border-red-500 hidden z-50">
+                    <h3 id="message-title" class="text-3xl font-bold text-red-400 mb-3 title-font">¡Tiempo Agotado!</h3>
+                    <p id="message-body" class="text-xl text-gray-300 mb-4">Tu puntuación fue de: 0</p>
+                    <button id="restart-button" class="btn-game bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg w-full">
+                        Volver a Intentar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Columna de Instrucciones -->
+        <div id="instructions-container-static" class="lg:col-span-1 bg-gray-800/80 p-4 rounded-xl shadow-xl h-fit">
+            <h2 class="text-2xl font-bold mb-4 border-b pb-2 border-gray-600 title-font text-primary-color">Instrucciones</h2>
+            <p class="text-sm mb-2 text-gray-300">
+                Tu objetivo es atrapar fantasmas antes de que desaparezcan.
+            </p>
+            <ul class="list-disc ml-5 text-gray-400 text-sm space-y-2">
+                <li>**Dispara:** Haz **clic** sobre los fantasmas que aparecen en el lienzo.</li>
+                <li>**Puntuación:** Cada fantasma atrapado te da **+1** punto.</li>
+                <li>**Movimiento:** Los fantasmas se mueven de forma **aleatoria** y rebotan en los bordes.</li>
+                <li>**Tiempo:** Tienes **30 segundos** para atrapar la mayor cantidad posible.</li>
+                <li>**Puntero:** ¡El cursor es tu **pistola**! Úsalo con precisión.</li>
+            </ul>
+        </div>
+        
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="mt-6 p-4 bg-gray-800/80 rounded-xl shadow-inner border-t-4 border-primary-color">
+        <div class="container mx-auto text-center text-gray-400 text-sm">
+            <p class="mb-1">&copy; 2024 Videojuego Cazafantasmas 2D</p>
+            <p>
+                Créditos del Creador: [Tu Nombre Aquí] - Número de Control: [Tu Número de Control Aquí]
+            </p>
+        </div>
+    </footer>
+
+    <!-- LÓGICA DEL JUEGO CON CANVAS Y JS -->
+    <script>
+        // --- 1. SETUP DE VARIABLES GLOBALES ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('current-score');
+        const startOverlay = document.getElementById('start-overlay');
+        const messageBox = document.getElementById('message-box');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+
+        let ghosts = [];
+        let score = 0;
+        let isGameRunning = false;
+        let gameTime = 30; // Segundos
+        let startTime;
+        let animationFrameId;
+
+        /* --- PUNTO DE PERSONALIZACIÓN 3a: CARGAR IMAGEN PERSONALIZADA DEL FANTASMA --- */
+        // Si tienes una imagen en /assets/fantasma.png, descomenta y úsala:
+        // const ghostImage = new Image();
+        // ghostImage.onload = () => console.log("Imagen de fantasma cargada.");
+        // ghostImage.onerror = (e) => console.error("Error al cargar la imagen del fantasma:", e);
+        // ghostImage.src = '/assets/fantasma.png'; // RUTA A TU IMAGEN PERSONALIZADA
+
+
+        // --- 2. CONFIGURACIÓN DE AUDIO (TONE.JS) ---
+        const synth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 4, decay: 0.5, sustain: 0.8, release: 2 }
+        }).toDestination();
+
+        // Loop para un sonido de ambiente oscuro y espeluznante
+        const ambientLoop = new Tone.Loop(time => {
+            // Nota grave de C2 (Do2)
+            synth.triggerAttackRelease(['C2'], '2n', time);
+            // Nota más aguda de G3 (Sol3) con un delay para desfasar
+            synth.triggerAttackRelease(['G3'], '4n', time + 0.5, 0.3);
+        }, '1n');
+
+        function startMusic() {
+            if (Tone.Transport.state !== 'started') {
+                Tone.start();
+                ambientLoop.start(0);
+                Tone.Transport.start();
+            }
+        }
+
+        function stopMusic() {
+            if (Tone.Transport.state === 'started') {
+                ambientLoop.stop();
+                Tone.Transport.stop();
+            }
+        }
+        
+        // --- 3. CLASE FANTASMA (ELEMENTO 2D CON IMAGEN Y MOVIMIENTO) ---
+        class Ghost {
+            constructor(canvasWidth, canvasHeight) {
+                this.radius = 25; 
+                this.x = Math.random() * (canvasWidth - 2 * this.radius) + this.radius;
+                this.y = Math.random() * (canvasHeight - 2 * this.radius) + this.radius;
+                
+                const speed = Math.random() * 2 + 1; 
+                const angle = Math.random() * 2 * Math.PI; 
+                this.vx = speed * Math.cos(angle);
+                this.vy = speed * Math.sin(angle);
+                
+                this.lifetime = 300 + Math.random() * 300; 
+                this.age = 0;
+                this.color = `rgba(180, 255, 255, ${0.5 + Math.random() * 0.5})`;
+            }
+
+            /* --- PUNTO DE PERSONALIZACIÓN 3b: DIBUJO DEL FANTASMA (Reemplazar por imagen) --- */
+            draw() {
+                const alpha = Math.max(0, 1 - (this.age / this.lifetime)); 
+                
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.globalAlpha = alpha;
+
+                /* SI USAS UNA IMAGEN:
+                   if (ghostImage && ghostImage.complete) {
+                       ctx.drawImage(ghostImage, -this.radius, -this.radius, 2 * this.radius, 2 * this.radius);
+                   } else {
+                       // Dibuja el fantasma con formas si la imagen no está cargada
+                       this._drawCanvasShape(); 
+                   }
+                */
+                
+                // CÓDIGO ACTUAL (DIBUJO CON FORMAS DE CANVAS)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(0, -this.radius / 2, this.radius, Math.PI, 0, false);
+                ctx.lineTo(this.radius, this.radius);
+                ctx.lineTo(-this.radius, this.radius);
+                ctx.lineTo(-this.radius / 3 * 2, this.radius * 0.7);
+                ctx.lineTo(-this.radius / 3, this.radius);
+                ctx.lineTo(0, this.radius * 0.7);
+                ctx.lineTo(this.radius / 3, this.radius);
+                ctx.lineTo(this.radius / 3 * 2, this.radius * 0.7);
+                ctx.fill();
+                
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(-this.radius / 3, 0, this.radius / 5, 0, 2 * Math.PI);
+                ctx.arc(this.radius / 3, 0, this.radius / 5, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // Mover Fantasma (Desplazamiento)
+            update(canvasWidth, canvasHeight) {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.age++;
+
+                // Lógica de rebote en los bordes
+                if (this.x + this.radius > canvasWidth || this.x - this.radius < 0) {
+                    this.vx *= -1;
+                    this.x = Math.max(this.radius, Math.min(canvasWidth - this.radius, this.x));
+                }
+                if (this.y + this.radius > canvasHeight || this.y - this.radius < 0) {
+                    this.vy *= -1;
+                    this.y = Math.max(this.radius, Math.min(canvasHeight - this.radius, this.y));
+                }
+            }
+            
+            // Comprobar si un punto (click) está dentro del fantasma
+            isClicked(clickX, clickY) {
+                const distance = Math.sqrt((clickX - this.x) ** 2 + (clickY - this.y) ** 2);
+                return distance < this.radius;
+            }
+            
+            // Comprobar si debe desaparecer (lifetime)
+            shouldDisappear() {
+                return this.age >= this.lifetime;
+            }
+        }
+
+        // --- 4. LÓGICA DEL JUEGO ---
+
+        function gameLoop(timestamp) {
+            if (!startTime) {
+                startTime = timestamp;
+            }
+
+            const elapsed = (timestamp - startTime) / 1000; 
+            const remainingTime = Math.max(0, gameTime - elapsed);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            updateTimerDisplay(remainingTime);
+            
+            if (remainingTime <= 0) {
+                endGame();
+                return;
+            }
+
+            if (Math.random() < 0.02 && ghosts.length < 15) { 
+                ghosts.push(new Ghost(canvas.width, canvas.height));
+            }
+
+            ghosts = ghosts.filter(ghost => {
+                ghost.update(canvas.width, canvas.height);
+                ghost.draw();
+                
+                return !ghost.shouldDisappear();
+            });
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- 5. FUNCIONES DE CONTROL DE JUEGO ---
+
+        function startGame() {
+            resizeCanvas();
+            
+            score = 0;
+            scoreDisplay.textContent = '0';
+            ghosts = [];
+            isGameRunning = true;
+            startTime = null; 
+            
+            startMusic();
+            startOverlay.style.opacity = '0';
+            setTimeout(() => startOverlay.style.display = 'none', 500);
+            messageBox.style.display = 'none';
+            
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            isGameRunning = false;
+            stopMusic();
+            cancelAnimationFrame(animationFrameId);
+
+            document.getElementById('message-body').textContent = `¡Tu puntuación final es de: ${score}!`;
+            messageBox.style.display = 'block';
+
+            if (window.saveHighScore) {
+                window.saveHighScore(score);
+            }
+        }
+
+        // --- 6. MANEJO DE EVENTOS ---
+
+        canvas.addEventListener('click', (event) => {
+            if (!isGameRunning) {
+                startMusic();
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+
+            let hit = false;
+            
+            const newGhosts = [];
+            ghosts.forEach(ghost => {
+                if (ghost.isClicked(clickX, clickY) && !hit) {
+                    score++;
+                    scoreDisplay.textContent = score.toString();
+                    hit = true; 
+                    new Tone.MembraneSynth({
+                        pitchDecay: 0.05,
+                        octaves: 2,
+                        envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.8 },
+                    }).toDestination().triggerAttackRelease('A4', '8n');
+                } else {
+                    newGhosts.push(ghost);
+                }
+            });
+            ghosts = newGhosts;
+        });
+
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+
+        function updateTimerDisplay(remainingTime) {
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = Math.floor(remainingTime % 60);
+            scoreDisplay.innerHTML = `
+                <p class="uppercase text-sm font-semibold text-gray-200">Tiempo Restante:</p>
+                <p class="text-4xl font-extrabold text-secondary-color font-mono">${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}</p>
+            `;
+        }
+        
+        // --- 7. INICIALIZACIÓN ---
+
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        window.addEventListener('load', resizeCanvas);
+        window.addEventListener('resize', resizeCanvas);
+
+    </script>
+    
+    <script>
+        document.addEventListener('click', () => {
+            if (Tone.context.state !== 'running') {
+                Tone.start();
+            }
+        }, { once: true });
+    </script>
+</body>
+</html>

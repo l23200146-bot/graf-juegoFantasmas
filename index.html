@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cazafantasmas — Examen</title>
+
+  <!-- Bootstrap CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="css/style.css">
+
+</head>
+<body class="bg-dark text-light">
+
+  <header class="container py-3">
+    <div class="d-flex align-items-center">
+      <img src="assets/favicon.jpeg" alt="logo" width="64" height="64" class="me-3">
+      <div>
+        <h1 class="h3 mb-0">Cazafantasmas: Mansión Abandonada</h1>
+        <small class="text-muted">Elimina fantasmas con tu pistola — ¡cuidado con los espectros!</small>
+      </div>
+      <div class="ms-auto text-end">
+        <div id="score" class="badge bg-danger fs-6">Puntos: 0</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="row">
+      <div class="col-lg-9">
+        <!-- Canvas container -->
+        <div class="game-wrapper position-relative">
+          <canvas id="gameCanvas" width="900" height="600"></canvas>
+          <!-- Instrucciones compactas sobre canvas -->
+          <div class="instructions small p-2">Instrucciones: Apunta con la pistola (cursor). Haz click sobre los fantasmas para eliminarlos. Música de fondo activada. </div>
+        </div>
+      </div>
+
+      <aside class="col-lg-3 mt-3 mt-lg-0">
+        <div class="card bg-secondary text-white">
+          <div class="card-body">
+            <h5 class="card-title">Instrucciones rápidas</h5>
+            <ul>
+              <li>Click sobre un fantasma para eliminarlo y ganar puntos.</li>
+              <li>Algunos fantasmas se mueven en círculos, otros diagonal o aleatoriamente.</li>
+              <li>Si quieres cambiar imágenes, coloca tus archivos en <code>/assets/</code>.</li>
+            </ul>
+            <hr class="border-light" />
+            <p class="mb-1"><strong>Controles</strong></p>
+            <p class="mb-0 small">Mouse: apuntar y click</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="container mt-4 mb-4 text-muted small">
+    <div class="d-flex justify-content-between">
+      <div>Creado por: Brandon Javier Lara Cruz — Nº de control: 23200146</div>
+      <div>Creado por: Ignacio Hernandez Hernandez — Nº de control: 23200144</div>
+      <div>Curso: Desarrollo de Aplicaciones — Examen</div>
+    </div>
+  </footer>
+
+  <!-- Audio de fondo (autoplay bloqueado en muchos navegadores; reproducir manualmente si es necesario) -->
+  <audio id="bgMusic" src="assets/bg-music.mp3" loop preload="auto"></audio>
+
+  <!-- Bootstrap JS (opcional) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Juego -->
+  <script src="js/game.js"></script>
+</body>
+</html>
